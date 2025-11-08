@@ -6,5 +6,6 @@ streamlit-audiorecorder
 pydub
 vaderSentiment
 transformers
-
+en_core_web_sm
 torch
+
