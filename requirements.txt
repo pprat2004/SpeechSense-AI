@@ -2,8 +2,9 @@ streamlit
 speechrecognition
 spacy
 pandas
-audiorecorder
+streamlit-audiorecorder
 pydub
 vaderSentiment
 transformers
+
 torch
