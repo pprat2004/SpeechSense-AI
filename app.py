@@ -6,14 +6,10 @@ from collections import Counter
 from audiorecorder import audiorecorder
 import io
 from pydub import AudioSegment
-# Import the VADER sentiment analyzer
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-# For the extractive summarizer
 from heapq import nlargest
-# --- NEW: Imports for Abstractive Summarization ---
 from transformers import pipeline
 
-# --- Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="NLP Analysis Dashboard")
 
 def local_css():
@@ -146,11 +142,8 @@ def local_css():
 
 local_css()
 
-# --- NLP Model Loading ---
-
 @st.cache_resource
 def load_spacy_model():
-    """Loads the spaCy model, with error handling."""
     try:
         nlp = spacy.load("en_core_web_sm")
         return nlp
@@ -160,7 +153,6 @@ def load_spacy_model():
 
 @st.cache_resource
 def load_summarizer_model():
-    """Loads the transformers summarization model."""
     try:
         model_name = "sshleifer/distilbart-cnn-6-6"
         st.info(f"Loading Abstractive Summarizer model ('{model_name}')... This may take a few minutes on the first run.")
@@ -174,24 +166,18 @@ def load_summarizer_model():
 nlp = load_spacy_model()
 abstractive_summarizer = load_summarizer_model()
 
-# --- NLP Analysis Function ---
 def analyze_text(text, nlp_model):
-    """Performs all NLP analysis and displays them in tabs."""
     if not nlp_model:
         st.error("NLP model is not loaded. Cannot perform analysis.")
         return
 
-    # Process the text with spaCy
     doc = nlp_model(text)
-
-    # --- Create Tabs for Clean UI ---
     tab1, tab2, tab3 = st.tabs([
         "Sentiment & Topics", 
         "Keywords & Stats", 
         "Named Entities (NER)"
     ])
 
-    # --- TAB 1: Sentiment & Topics ---
     with tab1:
         st.subheader("Sentiment Analysis (VADER)")
         sia = SentimentIntensityAnalyzer()
@@ -207,7 +193,6 @@ def analyze_text(text, nlp_model):
             
         st.metric(label="VADER Sentiment", value=f"{label} {emoji}", delta=f"Compound Score: {compound:.3f}")
         
-        # We shift the score from [-1, 1] to [0, 1] for the progress bar
         st.progress((compound + 1) / 2)
         
         with st.expander("See full VADER Score Breakdown"):
@@ -222,7 +207,6 @@ def analyze_text(text, nlp_model):
         
         st.subheader("Content Classifier")
         
-        # Define topic keywords (as sets for fast lookup)
         TOPIC_KEYWORDS = {
             'Action Item': {
                 'action', 'task', 'follow-up', 'urgent', 'asap', 'immediately', 
@@ -263,10 +247,8 @@ def analyze_text(text, nlp_model):
         else:
             st.metric(label="Detected Topic", value="General Conversation", delta="No specific topics found")
 
-    # --- TAB 2: Keywords & Stats ---
     with tab2:
         st.subheader("Top Keywords (Bag-of-Words)")
-        # Filter out stop words and punctuation
         filtered_tokens = [
             token.lemma_.lower() for token in doc 
             if not token.is_stop and not token.is_punct and not token.is_space
@@ -291,18 +273,13 @@ def analyze_text(text, nlp_model):
         col1.metric("Total Tokens (Words)", len(tokens))
         col2.metric("Tokens (Stop-words/Punctuation removed)", len(filtered_tokens))
 
-    # --- TAB 3: Named Entities (NER) ---
     with tab3:
         st.subheader("Named Entities (NER)")
         entities = [(ent.text, ent.label_) for ent in doc.ents]
         
         if entities:
-            # Create a DataFrame for better display
             entities_df = pd.DataFrame(entities, columns=["Entity", "Type (Label)"])
-            # Display the table
             st.dataframe(entities_df, use_container_width=True)
-            
-            # Optional: Display with spaCy's visualizer (displacy)
             st.info("Visual representation of entities:")
             html = spacy.displacy.render(doc, style="ent")
             st.write(html, unsafe_allow_html=True)
@@ -310,7 +287,6 @@ def analyze_text(text, nlp_model):
         else:
             st.info("No named entities were found in the text.")
 
-# --- NLP Summarization Functions ---
 
 def summarize_extractive(text, nlp_model, num_sentences=3):
     """
@@ -322,8 +298,6 @@ def summarize_extractive(text, nlp_model, num_sentences=3):
         return "Error: NLP model not loaded."
 
     doc = nlp_model(text)
-    
-    # 1. Filter out stop words and punctuation, get frequencies
     keywords = [
         token.lemma_.lower() for token in doc 
         if not token.is_stop and not token.is_punct and not token.is_space
@@ -334,7 +308,6 @@ def summarize_extractive(text, nlp_model, num_sentences=3):
         
     word_freq = Counter(keywords)
     
-    # 2. Score sentences
     sentence_scores = {}
     for sent in doc.sents:
         for word in sent:
@@ -348,23 +321,17 @@ def summarize_extractive(text, nlp_model, num_sentences=3):
     if not sentence_scores:
         return "Could not generate a summary (e.g., text is too short or has no keywords)."
 
-    # 3. Get the top N sentences
-    # Adjust num_sentences if the text has fewer sentences
     num_sentences = min(num_sentences, len(sentence_scores))
     if num_sentences == 0:
         return "Text is too short to summarize."
 
     summarized_sents = nlargest(num_sentences, sentence_scores, key=sentence_scores.get)
     
-    # 4. Join them to form the final summary
     final_summary = ' '.join([sent.text for sent in summarized_sents])
     
     return final_summary
 
 def summarize_abstractive(text, summarizer, min_len=30, max_len=150):
-    """
-    Performs abstractive summarization using a transformers model.
-    """
     if not summarizer:
         st.error("Abstractive summarizer model is not loaded.")
         return "Error: Model not loaded."
@@ -373,17 +340,14 @@ def summarize_abstractive(text, summarizer, min_len=30, max_len=150):
         return "Text is too short for an abstractive summary. Please provide more content."
     
     try:
-        # The pipeline returns a list of dictionaries
         summary_list = summarizer(text, max_length=max_len, min_length=min_len, do_sample=False)
         return summary_list[0]['summary_text']
     except Exception as e:
         st.error(f"Error during abstractive summarization: {e}")
         return "Error: Could not generate summary."
 
-# --- Streamlit App UI ---
-st.title("SpeechSense AI")
+st.title("SpeechSensAI")
 
-# --- Mode Selection ---
 mode = st.radio(
     "Choose your mode:",
     ("Record Audio & Analyze", "Analyze & Summarize Text"),
@@ -393,40 +357,30 @@ mode = st.radio(
 
 st.divider()
 
-# --- Mode 1: Audio Processing ---
 if mode == "Record Audio & Analyze":
     st.header("1. Record Audio & Analyze")
     st.write("Click the button to record your voice. Click again to stop.")
 
-    # The audiorecorder component
     audio = audiorecorder("Start Recording", "Stop Recording")
-    
-    # Check if we have session state for transcribed text
+
     if 'transcribed_text' not in st.session_state:
         st.session_state.transcribed_text = ""
 
     if audio:
-        # The 'audio' object is an AudioSegment.
-        # We need to export it to a file-like object (io.BytesIO) in 'wav' format.
         audio_buffer = io.BytesIO()
         audio.export(audio_buffer, format="wav")
-        audio_buffer.seek(0) # Rewind the buffer to the beginning for reading
-        
-        # Initialize the speech recognizer
+        audio_buffer.seek(0)
         r = sr.Recognizer()
         
-        # Process the audio
         try:
-            # Use the buffer as the audio source
             with sr.AudioFile(audio_buffer) as source:
                 audio_data = r.record(source)
             
-            # Transcribe using Google's Web Speech API
             with st.spinner("Transcribing audio..."):
                 text = r.recognize_google(audio_data)
             
             st.success("Transcription complete!")
-            st.session_state.transcribed_text = text # Save to session state
+            st.session_state.transcribed_text = text 
                     
         except sr.UnknownValueError:
             st.error("Speech Recognition could not understand the audio. Please try again.")
@@ -434,9 +388,6 @@ if mode == "Record Audio & Analyze":
             st.error(f"Could not request results from Google Speech Recognition service; {e}")
         except Exception as e:
             st.error(f"An unexpected error occurred during audio processing: {e}")
-
-    # Display transcribed text in a text area
-    # This will now show the saved text even after interacting with other widgets
     transcribed_text_input = st.text_area(
         "Transcribed Text:", 
         st.session_state.transcribed_text, 
@@ -444,8 +395,6 @@ if mode == "Record Audio & Analyze":
     )
 
     st.divider()
-
-    # --- 2. NLP Analysis Dashboard ---
     st.header("2. NLP Analysis Dashboard")
     st.write("Analyze or summarize the transcribed text.")
     
@@ -486,7 +435,6 @@ if mode == "Record Audio & Analyze":
                 st.warning("Please transcribe some audio first.")
 
 
-# --- Mode 2: Manual Text Processing ---
 elif mode == "Analyze & Summarize Text":
     st.header("Analyze & Summarize Text")
     st.write("Type or paste any text below to analyze or summarize it.")
@@ -496,7 +444,6 @@ elif mode == "Analyze & Summarize Text":
     if st.button("Analyze Manual Text"):
         if manual_text_input and nlp:
             with st.spinner("Running NLP analysis..."):
-                # We can reuse the same analysis function!
                 analyze_text(manual_text_input, nlp)
         elif not nlp:
             st.error("Cannot analyze: spaCy model not loaded.")
@@ -510,7 +457,6 @@ elif mode == "Analyze & Summarize Text":
         if st.button("Generate Extractive Summary (Fast)"):
             if manual_text_input and nlp:
                 with st.spinner("Generating extractive summary..."):
-                    # Call our new summarization function
                     summary = summarize_extractive(manual_text_input, nlp)
                     st.success("Extractive Summary (spaCy)")
                     st.write(summary)
@@ -529,4 +475,5 @@ elif mode == "Analyze & Summarize Text":
             elif not abstractive_summarizer:
                 st.error("Cannot summarize: Abstractive model not loaded.")
             else:
+
                 st.warning("Please enter some text to summarize.")
