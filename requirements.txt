@@ -1,0 +1,9 @@
+streamlit
+speechrecognition
+spacy
+pandas
+audiorecorder
+pydub
+vaderSentiment
+transformers
+torch
